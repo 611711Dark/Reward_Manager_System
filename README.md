@@ -17,7 +17,6 @@ You can clone the repository directly:
 ```bash
 git clone https://github.com/yourusername/reward-manager.git
 cd reward-manager
-pip install -e .
 ```
 
 ## Basic Usage
