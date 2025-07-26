@@ -42,7 +42,7 @@ class RewardMgr:
         param: float,
         var: Optional[float] = None,
         max_var: float = 1.0,
-        mul: float = 1.0,
+        mul: float = 1.5,
         name: Optional[str] = None,
     ) -> RewardMgr:
         if var is not None:
@@ -60,7 +60,7 @@ class RewardMgr:
         value: float,
         var: Optional[float] = None,
         max_var: float = 1.0,
-        mul: float = 1.0,
+        mul: float = 1.5,
         name: Optional[str] = None,
     ) -> RewardMgr:
         if abs(value) < 1e-9:
