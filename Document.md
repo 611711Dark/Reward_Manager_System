@@ -272,8 +272,8 @@ class RewardTrace:
 | Parameter | Type  | Default | Description                                                  |
 | --------- | ----- | ------- | ------------------------------------------------------------ |
 | `base`    | int   | 10      | Base for level separation; larger values amplify differences |
-| `rank`    | int   | -       | Priority level; key indicators recommended to be ≥ 2         |
-| `mul`     | float | 1.0     | Multiplier for dynamic variable-based rewards                |
+| `rank`    | int   | -       | Priority level; key indicators recommended to be "5<=rank<=10"         |
+| `mul`     | float | 1.5     | Multiplier for dynamic variable-based rewards                |
 | `maxlen`  | int   | None    | Maximum length for reward history                            |
 
 Example use cases:
