@@ -1,188 +1,177 @@
-# Reward Manager 系统 - 中文文档
+# Reward Priority Manager (奖励优先级管理器)
 
-## 目录
-1. [系统概述](#系统概述)  
-2. [核心特性](#核心特性)  
-3. [安装指南](#安装指南)  
-4. [基础使用](#基础使用)  
-5. [API参考](#api参考)  
-6. [集成示例](#集成示例)  
-7. [高级用法](#高级用法)  
-8. [许可证](#许可证)  
-9. [参与贡献](#参与贡献)  
-10. [英文文档](#英文文档)
+[English Version](README.md) | [完整设计文档](Document_cn.md)
 
-## 系统概述
+## 项目概述
 
-Reward Manager 是一个基于优先级的奖励管理系统，专为强化学习环境设计。它通过分层奖励架构和动态变量关联机制，提供灵活且直观的奖励计算方案。
+Reward Priority Manager (RPM) 是一个创新的奖励管理系统，专为强化学习和复杂决策系统设计。它通过**分层优先级架构**和**动态变量关联**机制，解决了传统奖励工程中权重调节困难、奖励信号不稳定等核心问题。
+
+RPM 的核心思想是将奖励值分解为 `rank`（等级）和 `param`（参数）两个维度：
+```
+最终奖励值 = 参数 × (基数^等级)
+```
+这种设计使高优先级奖励自然主导低优先级奖励，无需人工微调权重系数。
 
 ## 核心特性
 
-- **优先级奖励体系**：高优先级奖励自动主导低优先级奖励
-- **动态变量关联**：奖励值与环境变量动态关联
-- **对数输出模式**：可选的对数转换输出，有效压缩大数值范围
-- **透明奖励分析**：清晰的奖励组成分解
-- **易集成**：轻松对接各类强化学习环境
+1. **分层优先级架构**  
+   - 高等级奖励自动主导低等级奖励
+   - 支持 `rank/param` 直接控制或 `value` 自动分解
+   - 基数可配置（默认10）
 
-## 安装指南
+2. **动态变量关联**  
+   ```python
+   # 速度奖励：根据当前速度动态调节
+   mgr.add(3, 1.0, var=current_speed, max_var=max_speed, mul=1.5, name="speed")
+   ```
 
+3. **多级聚合压缩**  
+   ```mermaid
+   graph TD
+     A[Step级奖励] -->|50步| B[Game级聚合]
+     B -->|50局| C[Episode级聚合]
+     C -->|60章节| D[训练分析]
+   ```
+
+4. **双模式输出**  
+   - `raw`：原始奖励值（保持量级差异）
+   - `log`：对数压缩值（适合神经网络训练）
+
+## 安装与使用
+
+### 安装
 ```bash
-git clone https://github.com/yourusername/reward-manager.git
-cd reward-manager
+git clone https://github.com/611711Dark/Reward_Manager_System.git
 ```
 
-## 基础使用
-
-### 创建奖励
-
+### 基础用法
 ```python
-from reward_manager import RewardManager
+from reward_system import RewardMgr
 
-# 创建管理器（默认基数10）
-manager = RewardManager()
+# 创建奖励管理器
+mgr = RewardMgr(base=10)
 
-# 添加奖励（优先级等级，参数）
-manager.add_reward(rank=2, param=3.0)  # 3.0 * 10^2 = 300
-manager.add_reward(rank=1, param=-2.0) # -2.0 * 10^1 = -20
+# 添加固定基础奖励
+mgr.add_value(500.0, name="base")
 
-# 通过数值直接添加（自动分解）
-manager.add_value(4500)  # 自动存储为 rank=3, param=4.5
+# 添加动态速度奖励（当前速度5.0，最大速度10.0）
+mgr.add_value(1000.0, var=5.0, max_var=10.0, mul=1.5, name="speed")
+
+print(f"原始奖励: {mgr.total_raw():.1f}")#原始奖励: 1250.0
+print(f"对数奖励: {mgr.total_log():.3f}")#对数奖励: 5.575
+print(f"速度组件: {mgr['speed']:.1f}")#速度组件: 750.0
 ```
 
-### 变量关联
-
+### 环境集成
 ```python
-speed = 3.0
-max_speed = 5.0
+from simple_env import SimpleNavigationEnv
 
-# 添加速度相关奖励（基于当前速度缩放）
-manager.add_reward(
-    rank=2,
-    param=1.0,
-    associated_var=speed,
-    max_var_value=max_speed,
-    multiplier=2.0
-)
+env = SimpleNavigationEnv()
+state = env.reset()
+
+# 执行动作并获取奖励
+action = [0.5, 0.3]
+next_state, reward, done = env.step(action, use_log_reward=True)
 ```
 
-### 奖励计算
+## 核心组件
 
+### 1. Reward (原子奖励)
 ```python
-# 获取原始总值
-raw_total = manager.total_value(use_log=False)
-
-# 获取对数转换值
-log_total = manager.total_value(use_log=True)
-
-print(f"原始总值: {raw_total:.1f}")
-print(f"对数总值: {log_total:.3f}")
+r = Reward(rank=2, param=1.5, base=10, name="critical")
+print(r.raw)  # 1.5 * 10² = 150.0
+print(r.log)  # 2.1789769472931693
 ```
 
-## API参考
-
-### `PriorityReward` 类
-
-#### `__init__(self, rank: int, param: float, base: int = 10)`
-- `rank`: 优先级等级（越高越重要）
-- `param`: 奖励参数（可负值）
-- `base`: 计算基数（默认10）
-
-#### 方法:
-- `raw_value() -> float`: 返回原始奖励值 (param * base^rank)
-- `log_value() -> float`: 返回对数转换值 (sign * log10(abs(raw) + 1))
-
-### `RewardManager` 类
-
-#### `__init__(self, base: int = 10)`
-- `base`: 奖励计算的数值基数（默认10）
-
-#### 主要方法:
-
-**添加奖励:**
-- `add_reward(rank, param, associated_var=None, max_var_value=1.0, multiplier=1.0)`
-  - 添加带可选变量缩放的奖励
-- `add_value(value, associated_var=None, max_var_value=1.0, multiplier=1.0)`
-  - 通过数值添加奖励（自动分解为rank/param）
-
-**计算奖励:**
-- `total_value(use_log=False) -> float`
-  - 计算所有奖励的总和（可选对数转换）
-
-**检查:**
-- `highest_priority() -> Optional[PriorityReward]`
-- `lowest_priority() -> Optional[PriorityReward]`
-- `clear()` - 清除所有奖励
-
-## 集成示例
-
+### 2. RewardMgr (奖励管理器)
 ```python
-from reward_manager import RewardManager
-import numpy as np
+mgr = RewardMgr()
+mgr.add_value(200.0, name="bonus")  # 自动分解rank/param
+mgr.add(rank=1, param=3.0, name="penalty")  # 手动指定(推荐)
 
-class NavigationEnv:
-    def __init__(self):
-        self.target = np.array([8.0, 8.0])
-        self.position = np.array([0.0, 0.0])
-        self.speed = 0.0
-        self.max_speed = 5.0
-
-    def calculate_reward(self):
-        manager = RewardManager()
-
-        # 距离奖励（越近越好）
-        distance = np.linalg.norm(self.position - self.target)
-        max_dist = np.linalg.norm([10.0, 10.0])  # 最大可能距离
-        closeness = 1.0 - (distance / max_dist)
-
-        manager.add_reward(
-            rank=3,
-            param=5.0,
-            associated_var=closeness,
-            max_var_value=1.0,
-            multiplier=2.0
-        )
-
-        # 速度奖励
-        manager.add_reward(
-            rank=2,
-            param=1.5,
-            associated_var=self.speed,
-            max_var_value=self.max_speed
-        )
-
-        return manager.total_value(use_log=True), manager
+# 链式调用
+mgr.add_value(500.0, name="base").add_value(-100.0, name="error")
 ```
 
-## 高级用法
-
-### 自定义基数
-
+### 3. RewardTrace (奖励轨迹)
 ```python
-# 使用基数2创建二进制风格奖励
-binary_manager = RewardManager(base=2)
-binary_manager.add_reward(5, 1.0)  # 1.0 * 2^5 = 32
+trace = RewardTrace()
+
+# 记录多步奖励
+for _ in range(10):
+    mgr = env.calculate_reward()
+    trace.push(mgr)
+
+# 压缩为单一RewardMgr
+summary = trace.to_reward_mgr()
 ```
 
-### 奖励分析
+## 三级监控系统
 
-```python
-# 分析奖励组成
-total, manager = env.calculate_reward()
-print(f"总奖励: {total:.3f}")
-
-print("详细分解:")
-for i, reward in enumerate(manager):
-    print(f"{i+1}. 等级 {reward.rank}: {reward.param:.2f} = {reward.raw_value():.1f} (对数: {reward.log_value():.3f})")
+### 执行演示
+```bash
+python demo.py
 ```
+
+### 可视化输出
+![奖励监控系统](reward_system_demo.png)
+
+1. **步骤级监控**  
+   - 最后一局游戏的详细奖励组件
+   - 包括原始值和对数压缩值
+
+2. **游戏级监控**  
+   - 最后一章节的50局游戏聚合
+   - 显示各奖励组件的变化趋势
+
+3. **章节级监控**  
+   - 整个训练过程的60章节趋势
+   - 识别长期奖励变化模式
+
+## 设计优势
+
+1. **数学可解释性**  
+   奖励值 = 参数 × (基数^等级) 提供清晰的数学基础
+
+2. **动态优先级**  
+   ```python
+   # 自动计算合适等级
+   rank = max(0, int(math.log10(abs(value)/base)) + 1)
+   ```
+
+3. **内存高效**  
+   - `__slots__` 减少内存占用
+   - `deque` 实现滑动窗口
+
+4. **多级分析**  
+   ```python
+   # 三级数据保留策略
+   if ep_idx == N_EPISODE - 1:
+       final_game_trace = game_trace  # 保留末章节
+   ```
+
+## 应用场景
+
+1. **强化学习系统**  
+   - 替代传统标量奖励
+   - 解决奖励稀疏问题
+
+2. **游戏AI开发**  
+   - 复杂行为奖励组合
+   - 多目标平衡
+
+3. **机器人控制**  
+   - 安全约束优先级
+   - 多传感器奖励融合
+
+## 贡献指南
+
+欢迎通过 issue 或 pull request 贡献：
+1. 报告问题或建议
+2. 添加新环境示例
+3. 扩展可视化功能
+4. 优化核心算法
 
 ## 许可证
 
-MIT 许可证
-
-## 参与贡献
-
-欢迎提交issue或pull request参与贡献！
-
-## 英文文档
-
-[点击查看完整英文文档](README.md)
+本项目采用 [MIT 许可证](LICENSE)。

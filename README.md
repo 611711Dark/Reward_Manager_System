@@ -1,186 +1,203 @@
-# Reward Manager System
+# Reward Priority Manager (RPM)
 
-A flexible priority-based reward management system that allows for hierarchical reward composition with optional logarithmic scaling for output.
+[中文文档 (Chinese Version)](README_cn.md)  | [Full Design Document](Document.md)
 
-## Features
+## Project Overview
 
-- Priority-based reward hierarchy (higher rank rewards dominate lower ones)
-- Variable association for dynamic reward scaling
-- Optional logarithmic output scaling
-- Clear reward component breakdown
-- Easy integration with reinforcement learning environments
+Reward Priority Manager (RPM) is an innovative reward management system designed for reinforcement learning and complex decision-making systems. It addresses core issues in traditional reward engineering, such as difficulty in tuning reward weights and instability of reward signals, through a **hierarchical priority architecture** and **dynamic variable association** mechanism.
 
-## Installation
+The core concept of RPM is to decompose the reward value into two dimensions: `rank` and `param`:
 
-You can clone the repository directly:
+```
+Final Reward = param × (base ^ rank)
+```
+
+This design allows high-priority rewards to naturally dominate lower-priority ones without manually adjusting weight coefficients.
+
+## Key Features
+
+1. **Hierarchical Priority Architecture**
+
+   * Higher-rank rewards automatically override lower-rank rewards
+   * Supports direct `rank/param` control or automatic decomposition from `value`
+   * Configurable base (default is 10)
+
+2. **Dynamic Variable Association**
+
+   ```python
+   # Speed reward: dynamically adjusted based on current speed
+   mgr.add(3, 1.0, var=current_speed, max_var=max_speed, mul=1.5, name="speed")
+   ```
+
+3. **Multi-level Aggregation and Compression**
+
+   ```mermaid
+   graph TD
+     A[Step-Level Reward] -->|50 steps| B[Game-Level Aggregation]
+     B -->|50 games| C[Episode-Level Aggregation]
+     C -->|60 episodes| D[Training Analysis]
+   ```
+
+4. **Dual Output Modes**
+
+   * `raw`: raw reward value (preserves magnitude differences)
+   * `log`: log-compressed value (suitable for neural network training)
+
+## Installation and Usage
+
+### Installation
 
 ```bash
-git clone https://github.com/yourusername/reward-manager.git
-cd reward-manager
+git clone https://github.com/611711Dark/Reward_Manager_System.git
 ```
 
-## Basic Usage
-
-### Creating Rewards
+### Basic Usage
 
 ```python
-from reward_manager import RewardManager
+from reward_system import RewardMgr
 
-# Create a manager with base 10 (default)
-manager = RewardManager()
+# Create a reward manager
+mgr = RewardMgr(base=10)
 
-# Add rewards by rank and parameter
-manager.add_reward(rank=2, param=3.0)  # 3.0 * 10^2 = 300
-manager.add_reward(rank=1, param=-2.0) # -2.0 * 10^1 = -20
+# Add a fixed base reward
+mgr.add_value(500.0, name="base")
 
-# Or add by direct value (automatically decomposed)
-manager.add_value(4500)  # Will be stored as rank=3, param=4.5
+# Add a dynamic speed reward (current speed 5.0, max speed 10.0)
+mgr.add_value(1000.0, var=5.0, max_var=10.0, mul=1.5, name="speed")
+
+print(f"Raw Reward: {mgr.total_raw():.1f}")  # Raw Reward: 1250.0
+print(f"Log Reward: {mgr.total_log():.3f}")  # Log Reward: 5.575
+print(f"Speed Component: {mgr['speed']:.1f}")  # Speed Component: 750.0
 ```
 
-### Variable Association
+### Environment Integration
 
 ```python
-speed = 3.0
-max_speed = 5.0
+from simple_env import SimpleNavigationEnv
 
-# Add speed-dependent reward (scaled by current speed)
-manager.add_reward(
-    rank=2,
-    param=1.0,
-    associated_var=speed,
-    max_var_value=max_speed,
-    multiplier=2.0
-)
+env = SimpleNavigationEnv()
+state = env.reset()
+
+# Execute action and obtain reward
+action = [0.5, 0.3]
+next_state, reward, done = env.step(action, use_log_reward=True)
 ```
 
-### Reward Calculation
+## Core Components
+
+### 1. Reward (Atomic Reward)
 
 ```python
-# Get raw total value
-raw_total = manager.total_value(use_log=False)
-
-# Get log-scaled total value
-log_total = manager.total_value(use_log=True)
-
-print(f"Raw total: {raw_total:.1f}")
-print(f"Log total: {log_total:.3f}")
+r = Reward(rank=2, param=1.5, base=10, name="critical")
+print(r.raw)  # 1.5 * 10² = 150.0
+print(r.log)  # 2.1789769472931693
 ```
 
-### Inspection
+### 2. RewardMgr (Reward Manager)
 
 ```python
-# Get highest priority reward
-highest = manager.highest_priority()
+mgr = RewardMgr()
+mgr.add_value(200.0, name="bonus")  # Automatically decomposes rank/param
+mgr.add(rank=1, param=3.0, name="penalty")  # Manually specify (recommended)
 
-# Iterate through all rewards
-for i, reward in enumerate(manager):
-    print(f"Reward {i}: {reward}")
-
-# Clear all rewards
-manager.clear()
+# Chain calls
+mgr.add_value(500.0, name="base").add_value(-100.0, name="error")
 ```
 
-## API Reference
-
-### `PriorityReward` Class
-
-#### `__init__(self, rank: int, param: float, base: int = 10)`
-- `rank`: Priority rank (higher = more significant)
-- `param`: Reward parameter (can be negative)
-- `base`: Numerical base (default 10)
-
-#### Methods:
-- `raw_value() -> float`: Returns the raw reward value (param * base^rank)
-- `log_value() -> float`: Returns log-scaled value (sign * log10(abs(raw) + 1))
-
-### `RewardManager` Class
-
-#### `__init__(self, base: int = 10)`
-- `base`: Numerical base for reward calculation (default 10)
-
-#### Key Methods:
-
-**Adding Rewards:**
-- `add_reward(rank, param, associated_var=None, max_var_value=1.0, multiplier=1.0)`
-  - Add a reward with optional variable scaling
-- `add_value(value, associated_var=None, max_var_value=1.0, multiplier=1.0)`
-  - Add reward by value (auto-decomposed to rank/param)
-
-**Calculating Rewards:**
-- `total_value(use_log=False) -> float`
-  - Calculate sum of all rewards (optionally log-scaled)
-  
-**Inspection:**
-- `highest_priority() -> Optional[PriorityReward]`
-- `lowest_priority() -> Optional[PriorityReward]`
-- `clear()` - Remove all rewards
-
-## Integration Example
+### 3. RewardTrace (Reward Trace)
 
 ```python
-from reward_manager import RewardManager
-import numpy as np
+trace = RewardTrace()
 
-class NavigationEnv:
-    def __init__(self):
-        self.target = np.array([8.0, 8.0])
-        self.position = np.array([0.0, 0.0])
-        self.speed = 0.0
-        self.max_speed = 5.0
-        
-    def calculate_reward(self):
-        manager = RewardManager()
-        
-        # Distance reward (closer = better)
-        distance = np.linalg.norm(self.position - self.target)
-        max_dist = np.linalg.norm([10.0, 10.0])  # Max possible distance
-        closeness = 1.0 - (distance / max_dist)
-        
-        manager.add_reward(
-            rank=3,
-            param=5.0,
-            associated_var=closeness,
-            max_var_value=1.0,
-            multiplier=2.0
-        )
-        
-        # Speed reward
-        manager.add_reward(
-            rank=2,
-            param=1.5,
-            associated_var=self.speed,
-            max_var_value=self.max_speed
-        )
-        
-        return manager.total_value(use_log=True), manager
+# Record multi-step rewards
+for _ in range(10):
+    mgr = env.calculate_reward()
+    trace.push(mgr)
+
+# Compress into a single RewardMgr
+summary = trace.to_reward_mgr()
 ```
 
-## Advanced Usage
+## Three-Level Monitoring System
 
-### Custom Base Values
+### Demo Execution
 
-```python
-# Use base 2 for binary-style rewards
-binary_manager = RewardManager(base=2)
-binary_manager.add_reward(5, 1.0)  # 1.0 * 2^5 = 32
+```bash
+python demo.py
 ```
 
-### Reward Analysis
+### Visualization Output
 
-```python
-# Analyze reward components
-total, manager = env.calculate_reward()
-print(f"Total reward: {total:.3f}")
+![Reward Monitoring System](reward_system_demo.png)
 
-print("Breakdown:")
-for i, reward in enumerate(manager):
-    print(f"{i+1}. Rank {reward.rank}: {reward.param:.2f} = {reward.raw_value():.1f} (log: {reward.log_value():.3f})")
-```
+1. **Step-Level Monitoring**
+
+   * Detailed reward components of the last game
+   * Includes both raw and log-compressed values
+
+2. **Game-Level Monitoring**
+
+   * Aggregation of 50 games in the last episode
+   * Shows trend of each reward component
+
+3. **Episode-Level Monitoring**
+
+   * Trend over 60 training episodes
+   * Helps identify long-term reward patterns
+
+## Design Advantages
+
+1. **Mathematical Interpretability**
+   The reward formula = param × (base ^ rank) provides a clear mathematical foundation
+
+2. **Dynamic Priority Assignment**
+
+   ```python
+   # Automatically compute appropriate rank
+   rank = max(0, int(math.log10(abs(value)/base)) + 1)
+   ```
+
+3. **Memory Efficiency**
+
+   * Uses `__slots__` to reduce memory usage
+   * `deque` supports sliding window operations
+
+4. **Multi-Level Analysis**
+
+   ```python
+   # Three-level data retention strategy
+   if ep_idx == N_EPISODE - 1:
+       final_game_trace = game_trace  # Retain final episode
+   ```
+
+## Application Scenarios
+
+1. **Reinforcement Learning Systems**
+
+   * Replace traditional scalar rewards
+   * Address sparse reward issues
+
+2. **Game AI Development**
+
+   * Compose complex behavior rewards
+   * Balance multiple objectives
+
+3. **Robot Control**
+
+   * Prioritize safety constraints
+   * Fuse multi-sensor reward signals
+
+## Contribution Guide
+
+We welcome contributions via issues or pull requests:
+
+1. Report bugs or suggestions
+2. Add new environment examples
+3. Extend visualization features
+4. Optimize core algorithms
 
 ## License
 
-MIT License
+This project is licensed under the [MIT License](LICENSE).
 
-## Contributing
-
-Contributions are welcome! Please open an issue or submit a pull request.
+---
