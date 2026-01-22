@@ -38,21 +38,21 @@ class SimpleNavigationEnv:
         return self.get_state(), reward, done
 
     def calculate_reward(self) -> RewardMgr:
-        mgr = RewardMgr(base=10)
+        mgr = RewardMgr()
 
-        mgr.add_value(500.0, name="base")          # 固定奖励
+        mgr.add(5.0, name="base")                          # 固定奖励
 
-        mgr.add_value(1000.0, var=self.speed,
-                      max_var=self.max_speed, mul=1.5, name="speed")
+        mgr.add(3.0, var=self.speed, max_var=self.max_speed,
+                mul=1.5, name="speed")
 
-        mgr.add_value(-300.0, var=abs(self.direction_error),
-                      max_var=30, mul=2.0, name="direction")
+        mgr.add(-2.0, var=abs(self.direction_error),
+                max_var=30, mul=2.0, name="direction")
 
         distance = np.linalg.norm([self.x - self.target_x, self.y - self.target_y])
         max_d = np.linalg.norm([self.max_x, self.max_y])
         closeness = 1.0 - (distance / max_d)
-        mgr.add_value(1000.0, var=closeness ** 0.5,
-                      max_var=1.0, mul=2.0, name="distance")
+        mgr.add(2.0, var=closeness ** 0.5, max_var=1.0,
+                mul=2.0, name="distance")
         return mgr
 
     def render_status(self):

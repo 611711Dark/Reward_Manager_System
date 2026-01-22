@@ -1,35 +1,62 @@
-# Reward Priority Manager (RPM)
+# Reward Manager System (RMS)
 
-[中文文档 (Chinese Version)](README_cn.md)  | [Full Design Document](Document.md)
+[Chinese Version](README_cn.md) | [Full Design Document](Document.md)
 
 ## Project Overview
 
-Reward Priority Manager (RPM) is an innovative reward management system designed for reinforcement learning and complex decision-making systems. It addresses core issues in traditional reward engineering, such as difficulty in tuning reward weights and instability of reward signals, through a **hierarchical priority architecture** and **dynamic variable association** mechanism.
+Reward Manager System (RMS) is a straightforward reward management system designed for reinforcement learning and complex decision-making systems. It provides **direct reward value control**, **dynamic variable association**, **reward clipping**, **rich visualization**, and **curriculum learning** support.
 
-The core concept of RPM is to decompose the reward value into two dimensions: `rank` and `param`:
-
-```
-Final Reward = param × (base ^ rank)
-```
-
-This design allows high-priority rewards to naturally dominate lower-priority ones without manually adjusting weight coefficients.
+The core design is simple and intuitive: **directly input reward values** (like 0.1, 0.04, 5.0, etc.) and optionally scale them based on dynamic variables.
 
 ## Key Features
 
-1. **Hierarchical Priority Architecture**
-
-   * Higher-rank rewards automatically override lower-rank rewards
-   * Supports direct `rank/param` control or automatic decomposition from `value`
-   * Configurable base (default is 10)
+1. **Direct Value Control**
+   - Input reward values directly (e.g., 0.1, 0.04, 5.0)
+   - No complex rank/param configuration needed
+   - Intuitive and easy to tune
 
 2. **Dynamic Variable Association**
 
    ```python
    # Speed reward: dynamically adjusted based on current speed
-   mgr.add(3, 1.0, var=current_speed, max_var=max_speed, mul=1.5, name="speed")
+   mgr.add(1.0, var=current_speed, max_var=max_speed, mul=1.5, name="speed")
    ```
 
-3. **Multi-level Aggregation and Compression**
+3. **Reward Clipping**
+   - Prevent extreme reward values
+   - Supports both range and single-value clipping
+
+   ```python
+   # Range clipping [0, 5]
+   mgr.add(10.0, name="bonus", clip=(0, 5))
+
+   # Upper limit only
+   mgr.add(10.0, name="reward", clip=5)
+   ```
+
+4. **Curriculum Learning**
+   - Multi-stage reward progression
+   - Support for episode-based, game-based, and performance-based triggers
+
+   ```python
+   stage1 = Stage("easy", episodes=100)
+   stage2 = Stage("medium", condition=lambda: success_rate > 0.8)
+   ```
+
+5. **Rich Visualization**
+   - Heatmap for reward components over time
+   - Correlation matrix for component relationships
+   - Distribution histograms for each component
+   - Comprehensive dashboard
+
+   ```python
+   trace.plot_heatmap(save_path="heatmap.png")
+   trace.plot_correlation(save_path="correlation.png")
+   trace.plot_distribution(save_path="distribution.png")
+   trace.plot_dashboard(save_path="dashboard.png")
+   ```
+
+6. **Multi-level Aggregation and Compression**
 
    ```mermaid
    graph TD
@@ -38,7 +65,7 @@ This design allows high-priority rewards to naturally dominate lower-priority on
      C -->|60 episodes| D[Training Analysis]
    ```
 
-4. **Dual Output Modes**
+7. **Dual Output Modes**
 
    * `raw`: raw reward value (preserves magnitude differences)
    * `log`: log-compressed value (suitable for neural network training)
@@ -49,6 +76,7 @@ This design allows high-priority rewards to naturally dominate lower-priority on
 
 ```bash
 git clone https://github.com/611711Dark/Reward_Manager_System.git
+pip install numpy matplotlib  # for visualization features
 ```
 
 ### Basic Usage
@@ -57,30 +85,75 @@ git clone https://github.com/611711Dark/Reward_Manager_System.git
 from reward_system import RewardMgr
 
 # Create a reward manager
-mgr = RewardMgr(base=10)
+mgr = RewardMgr()
 
 # Add a fixed base reward
-mgr.add_value(500.0, name="base")
+mgr.add(5.0, name="base")
 
-# Add a dynamic speed reward (current speed 5.0, max speed 10.0)
-mgr.add_value(1000.0, var=5.0, max_var=10.0, mul=1.5, name="speed")
+# Add a dynamic speed reward with clipping
+mgr.add(3.0, var=5.0, max_var=10.0, mul=1.5, name="speed", clip=(0, 5))
 
-print(f"Raw Reward: {mgr.total_raw():.1f}")  # Raw Reward: 1250.0
-print(f"Log Reward: {mgr.total_log():.3f}")  # Log Reward: 5.575
-print(f"Speed Component: {mgr['speed']:.1f}")  # Speed Component: 750.0
+print(f"Raw Reward: {mgr.total_raw():.3f}")  # Raw Reward: 5.000
+print(f"Log Reward: {mgr.total_log():.3f}")  # Log Reward: 0.699
+print(f"Speed Component: {mgr['speed']:.3f}")  # Speed Component: 2.250
 ```
 
-### Environment Integration
+### Curriculum Learning Example
 
 ```python
-from simple_env import SimpleNavigationEnv
+from reward_system import CurriculumMgr, Stage
 
-env = SimpleNavigationEnv()
-state = env.reset()
+# Define training stages
+curriculum = CurriculumMgr()
 
-# Execute action and obtain reward
-action = [0.5, 0.3]
-next_state, reward, done = env.step(action, use_log_reward=True)
+# Stage 1: Basic movement (episodes 0-100)
+stage1 = Stage("easy", episodes=100)
+stage1.add(1.0, name="reach_target", clip=(0, 1))
+stage1.add(0.5, name="not_crash", clip=(0, 1))
+
+# Stage 2: Speed control (triggered when success rate > 0.8)
+stage2 = Stage("medium", condition=lambda: success_rate > 0.8)
+stage2.add(1.0, name="reach_target", clip=(0, 1))
+stage2.add(0.8, name="speed_bonus", var=speed/max_speed)
+stage2.add(0.5, name="not_crash")
+
+# Stage 3: Full task (final stage)
+stage3 = Stage("hard")
+stage3.add(1.0, name="reach_target")
+stage3.add(0.8, name="speed_bonus")
+stage3.add(0.5, name="efficiency")
+
+curriculum.add_stages(stage1, stage2, stage3)
+
+# Training loop
+for ep in range(500):
+    # Get current stage reward
+    mgr = curriculum.get_reward()
+
+    # Execute action...
+    state, reward, done = env.step(action)
+
+    # Update progress and check for stage advancement
+    if curriculum.advance(episode_count=ep):
+        print(f"Advanced to: {curriculum.get_current_stage().name}")
+```
+
+### Visualization Example
+
+```python
+from reward_system import RewardTrace
+
+# Record rewards during training
+trace = RewardTrace()
+for step in range(100):
+    mgr = env.calculate_reward()
+    trace.push(mgr)
+
+# Visualize
+trace.plot_dashboard(save_path="dashboard.png")
+trace.plot_heatmap(save_path="heatmap.png")
+trace.plot_correlation(save_path="correlation.png")
+trace.plot_distribution(save_path="distribution.png")
 ```
 
 ## Core Components
@@ -88,23 +161,56 @@ next_state, reward, done = env.step(action, use_log_reward=True)
 ### 1. Reward (Atomic Reward)
 
 ```python
-r = Reward(rank=2, param=1.5, base=10, name="critical")
-print(r.raw)  # 1.5 * 10² = 150.0
-print(r.log)  # 2.1789769472931693
+r = Reward(0.5, name="critical")
+print(r.raw)  # 0.5
+print(r.log)  # 0.17609125905568124
 ```
 
 ### 2. RewardMgr (Reward Manager)
 
 ```python
 mgr = RewardMgr()
-mgr.add_value(200.0, name="bonus")  # Automatically decomposes rank/param
-mgr.add(rank=1, param=3.0, name="penalty")  # Manually specify (recommended)
+mgr.add(2.0, name="bonus", clip=(0, 5))  # With clipping
+mgr.add(-1.0, name="penalty", clip=(-10))  # Upper limit only
 
 # Chain calls
-mgr.add_value(500.0, name="base").add_value(-100.0, name="error")
+mgr.add(5.0, name="base").add(-0.5, name="error")
 ```
 
-### 3. RewardTrace (Reward Trace)
+### 3. Stage (Training Stage)
+
+```python
+# Episode-based trigger
+stage = Stage("easy", episodes=100)
+
+# Performance-based trigger
+stage = Stage("medium", condition=lambda: success_rate > 0.8)
+
+# No trigger (final stage)
+stage = Stage("hard")
+
+# Add rewards to stage
+stage.add(1.0, name="reward", clip=(0, 2))
+```
+
+### 4. CurriculumMgr (Curriculum Manager)
+
+```python
+curriculum = CurriculumMgr()
+curriculum.add_stage(stage1).add_stage(stage2).add_stage(stage3)
+
+# Or批量添加
+curriculum.add_stages(stage1, stage2, stage3)
+
+# Get current reward
+mgr = curriculum.get_reward()
+
+# Check and advance stages
+if curriculum.advance(episode_count=150):
+    print("Stage advanced!")
+```
+
+### 5. RewardTrace (Reward Trace)
 
 ```python
 trace = RewardTrace()
@@ -116,59 +222,79 @@ for _ in range(10):
 
 # Compress into a single RewardMgr
 summary = trace.to_reward_mgr()
+
+# Visualize
+trace.plot_heatmap()
+trace.plot_correlation()
+trace.plot_distribution()
+trace.plot_dashboard()
 ```
 
-## Three-Level Monitoring System
+## API Reference
 
-### Demo Execution
+### RewardMgr.add()
 
-```bash
-python demo.py
+```python
+def add(
+    self,
+    value: float,
+    var: Optional[float] = None,
+    max_var: float = 1.0,
+    mul: float = 1.0,
+    name: Optional[str] = None,
+    clip: Optional[Union[float, tuple[float, float]]] = None,
+) -> RewardMgr
 ```
 
-### Visualization Output
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `value` | float | - | Direct reward value (e.g., 0.1, 0.04) |
+| `var` | float | None | Dynamic variable value (optional) |
+| `max_var` | float | 1.0 | Max value of the variable for normalization |
+| `mul` | float | 1.0 | Multiplier factor |
+| `name` | str | None | Reward name for querying |
+| `clip` | float/tuple | None | Clipping limit: `max` or `(min, max)` |
 
-![Reward Monitoring System](reward_system_demo.png)
+### Stage()
 
-1. **Step-Level Monitoring**
+```python
+def __init__(
+    self,
+    name: str,
+    episodes: Optional[int] = None,
+    games: Optional[int] = None,
+    condition: Optional[Callable[[], bool]] = None,
+)
+```
 
-   * Detailed reward components of the last game
-   * Includes both raw and log-compressed values
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `name` | str | - | Stage name |
+| `episodes` | int | None | Trigger after this many episodes |
+| `games` | int | None | Trigger after this many games |
+| `condition` | callable | None | Custom condition function |
 
-2. **Game-Level Monitoring**
+### CurriculumMgr.advance()
 
-   * Aggregation of 50 games in the last episode
-   * Shows trend of each reward component
+```python
+def advance(
+    self,
+    episode_count: Optional[int] = None,
+    game_count: Optional[int] = None,
+    check_condition: bool = True,
+) -> bool
+```
 
-3. **Episode-Level Monitoring**
+Returns `True` if stage was advanced, `False` otherwise.
 
-   * Trend over 60 training episodes
-   * Helps identify long-term reward patterns
+### RewardTrace Visualization Methods
 
-## Design Advantages
-
-1. **Mathematical Interpretability**
-   The reward formula = param × (base ^ rank) provides a clear mathematical foundation
-
-2. **Dynamic Priority Assignment**
-
-   ```python
-   # Automatically compute appropriate rank
-   rank = max(0, int(math.log10(abs(value)/base)) + 1)
-   ```
-
-3. **Memory Efficiency**
-
-   * Uses `__slots__` to reduce memory usage
-   * `deque` supports sliding window operations
-
-4. **Multi-Level Analysis**
-
-   ```python
-   # Three-level data retention strategy
-   if ep_idx == N_EPISODE - 1:
-       final_game_trace = game_trace  # Retain final episode
-   ```
+| Method | Description |
+|---------|-------------|
+| `plot_heatmap(save_path=None, title="...")` | Reward heatmap over time |
+| `plot_correlation(save_path=None, title="...")` | Component correlation matrix |
+| `plot_distribution(save_path=None, title="...")` | Distribution histograms |
+| `plot_dashboard(save_path=None)` | Comprehensive dashboard |
 
 ## Application Scenarios
 
@@ -176,16 +302,34 @@ python demo.py
 
    * Replace traditional scalar rewards
    * Address sparse reward issues
+   * Use curriculum learning for progressive difficulty
 
 2. **Game AI Development**
 
    * Compose complex behavior rewards
    * Balance multiple objectives
+   * Progressively unlock advanced mechanics
 
 3. **Robot Control**
 
    * Prioritize safety constraints
    * Fuse multi-sensor reward signals
+   * Start with basic tasks, advance to complex ones
+
+## Demo Files
+
+| File | Description |
+|------|-------------|
+| `demo.py` | Three-level monitoring demo |
+| `curriculum_demo.py` | Curriculum learning demo |
+| `simple_env.py` | Simple navigation environment |
+
+Run demos:
+
+```bash
+python demo.py
+python curriculum_demo.py
+```
 
 ## Contribution Guide
 
